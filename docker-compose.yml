@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  auth_service:
+    build: .
+    container_name: auth_service
+    restart: always
+    environment:
+      - AUTH0_DOMAIN=${AUTH0_DOMAIN}
+      - AUTH0_API_AUDIENCE=${AUTH0_API_AUDIENCE}
+      - AUTH0_ISSUER=${AUTH0_ISSUER}
+      - AUTH0_ALGORITHMS=${AUTH0_ALGORITHMS}
+      - AUTH0_CLIENT_ID=${AUTH0_CLIENT_ID}
+      - AUTH0_CLIENT_SECRET=${AUTH0_CLIENT_SECRET}
+      - AUTH0_MGMT_CLIENT_ID=${AUTH0_MGMT_CLIENT_ID}
+      - AUTH0_MGMT_CLIENT_SECRET=${AUTH0_MGMT_CLIENT_SECRET}
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_DB=${REDIS_DB}
+      - REDIS_USERNAME=${REDIS_USERNAME}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_SSL=${REDIS_SSL}
+    depends_on:
+      - redis-stack
+    ports:
+      - 8000:8000
+    networks:
+      - backend
+    volumes:
+      - .:/app
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.auth_service.rule=Host(`localhost`)"
+      - "traefik.http.services.auth_service.loadbalancer.server.port=8000"
+
+  redis-stack:
+    image: redis/redis-stack:latest
+    container_name: redis-stack
+    env_file:
+      - .env
+    environment:
+      REDIS_ARGS: "--user ${REDIS_USERNAME} on >${REDIS_PASSWORD} ~* +@all"
+    restart: unless-stopped
+    ports:
+      - 6379:6379
+      - 13333:8001
+    networks:
+      - backend
+    volumes:
+      - redis-stack:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-u", "redis://${REDIS_USERNAME}:${REDIS_PASSWORD}@redis-stack:6379", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  traefik:
+    image: "traefik:v2.4"
+    container_name: traefik
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    networks:
+      - backend
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  redis-stack:
